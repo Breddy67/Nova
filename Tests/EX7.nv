@@ -1,0 +1,3 @@
+print("\n=== TEST 7: BUNCH LOOP ===")
+bunch nums = {10, 20, 30, 40}
+loop(i=0; i < bunch_size(nums); i=i+1) { print(nums[i]) }
