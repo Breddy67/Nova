@@ -25,7 +25,9 @@ private:
     std::vector<uint8_t> code;
     std::vector<BytecodeValue> constants;
     std::vector<NovaValue> stack;
-    std::unordered_map<std::string, size_t> functionAddresses;
+    std::stack<size_t> try_stack; 
+    std::unordered_map<std::string, size_t> function_addresses; 
+    std::unordered_map<std::string, std::vector<std::string>> function_params; 
     std::vector<Frame> frames;
     std::shared_ptr<Environment> current_env;
     std::vector<std::string> string_constants;

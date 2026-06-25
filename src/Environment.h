@@ -48,4 +48,5 @@ struct Environment {
         vars[name] = value;
         varTypes[name] = type;
     }
+
 };

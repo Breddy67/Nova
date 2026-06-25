@@ -1,4 +1,5 @@
 #include "NovaVM.h"
+#include <algorithm>
 #include <iostream>
 #include <cmath>
 #include "OpCodes.h" 
@@ -42,11 +43,14 @@ void NovaVM::run(const BytecodeProgram& program) {
     code = program.code;
     constants = program.constants;
     string_constants = program.string_constants;
+    function_addresses = program.function_addresses;  
+    function_params = program.function_params;       
+    //std::cout << "[VM] run: function_params size = " << function_params.size() << "\n";
+    // for (const auto& [name, params] : function_params) {
+    //     std::cout << "[VM] run: " << name << " has " << params.size() << " params\n";
+    // }
     pc = 0;
     running = true;
-    //std::cout << "[VM] code size: " << code.size() << "\n";  
-    //std::cout << "[VM] constants: " << constants.size() << "\n";  
-    
     Frame frame;
     frame.pc = 0;
     frame.env = current_env;
@@ -133,10 +137,26 @@ void NovaVM::executeLoop() {
             case OpCode::ADD: {
                 auto right = pop();
                 auto left = pop();
-                if (std::holds_alternative<double>(left) && std::holds_alternative<double>(right)) {
-                    push(std::get<double>(left) + std::get<double>(right));
-                } else {
-                    push(novaStr(left) + novaStr(right));
+                
+                //std::cout << "[VM] ADD: left type=" << left.index() << ", right type=" << right.index() << "\n";
+                //std::cout << "[VM] ADD: left=" << novaStr(left) << ", right=" << novaStr(right) << "\n";
+                
+                try {
+                    if (std::holds_alternative<double>(left) && std::holds_alternative<double>(right)) {
+                        double result = std::get<double>(left) + std::get<double>(right);
+                        //std::cout << "[VM] ADD: double result=" << result << "\n";
+                        push(result);
+                    } else if (std::holds_alternative<std::string>(left) || std::holds_alternative<std::string>(right)) {
+                        std::string result = novaStr(left) + novaStr(right);
+                        //std::cout << "[VM] ADD: string result=" << result << "\n";
+                        push(result);
+                    } else {
+                        //std::cout << "[VM] ADD: fallback result=0\n";
+                        push(0.0);
+                    }
+                } catch (const std::exception& e) {
+                    std::cout << "[VM] ADD: ERROR - " << e.what() << "\n";
+                    push(0.0);
                 }
                 break;
             }
@@ -144,9 +164,16 @@ void NovaVM::executeLoop() {
             case OpCode::SUB: {
                 auto right = pop();
                 auto left = pop();
-                push(std::get<double>(left) - std::get<double>(right));
+               //std::cout << "[VM] SUB: " << novaStr(left) << " - " << novaStr(right) << "\n";
+                if (std::holds_alternative<double>(left) && std::holds_alternative<double>(right)) {
+                    double result = std::get<double>(left) - std::get<double>(right);
+                   // std::cout << "[VM] SUB: result=" << result << "\n";
+                    push(result);
+                } else {
+                    push(0.0);
+                }
                 break;
-            }
+}
             
             case OpCode::MUL: {
                 auto right = pop();
@@ -187,7 +214,9 @@ void NovaVM::executeLoop() {
             case OpCode::EQ: {
                 auto right = pop();
                 auto left = pop();
-                push(left == right);
+                bool result = (left == right);
+                //std::cout << "[VM] EQ: " << novaStr(left) << " == " << novaStr(right) << " = " << result << "\n";
+                push(result);
                 break;
             }
             
@@ -201,7 +230,14 @@ void NovaVM::executeLoop() {
             case OpCode::LT: {
                 auto right = pop();
                 auto left = pop();
-                push(std::get<double>(left) < std::get<double>(right));
+                
+                double leftVal = std::get<double>(left);
+                double rightVal = std::get<double>(right);
+                bool result = leftVal < rightVal;
+                
+               // std::cout << "[VM] LT: left=" << leftVal << " (popped second), right=" << rightVal << " (popped first)\n";
+                //std::cout << "[VM] LT: " << leftVal << " < " << rightVal << " = " << result << "\n";
+                push(result);
                 break;
             }
             
@@ -215,9 +251,13 @@ void NovaVM::executeLoop() {
             case OpCode::LTE: {
                 auto right = pop();
                 auto left = pop();
-                push(std::get<double>(left) <= std::get<double>(right));
-                break;
-            }
+                double leftVal = std::get<double>(left);
+                double rightVal = std::get<double>(right);
+                bool result = leftVal <= rightVal;
+                            //std::cout << "[VM] LTE: " << leftVal << " <= " << rightVal << " = " << result << "\n";
+                            push(result);
+                            break;
+                        }
             
             case OpCode::GTE: {
                 auto right = pop();
@@ -249,7 +289,6 @@ void NovaVM::executeLoop() {
             case OpCode::LOAD: {
                 size_t idx = code[pc++];
                 
-                // ── Get the constant ──────────────────────────────────────────────────────
                 if (idx >= constants.size()) {
                     std::cout << "[VM] ERROR: LOAD constant index " << idx << " out of bounds\n";
                     running = false;
@@ -263,7 +302,6 @@ void NovaVM::executeLoop() {
                     break;
                 }
                 
-                // ── Get the string from the string pool ──────────────────────────────────
                 if (constVal.string_idx >= string_constants.size()) {
                     std::cout << "[VM] ERROR: String index " << constVal.string_idx << " out of bounds\n";
                     running = false;
@@ -271,7 +309,17 @@ void NovaVM::executeLoop() {
                 }
                 
                 std::string name = string_constants[constVal.string_idx];
-                push(current_env->get(name));
+                //std::cout << "[VM] LOAD: trying to load '" << name << "'\n";
+                //std::cout << "[VM] LOAD: " << name << " (env=" << current_env.get() << ")\n";               
+                try {
+                    NovaValue val = current_env->get(name);
+                    push(val);
+                    //std::cout << "[VM] LOAD: loaded '" << name << "' = " << novaStr(val) << "\n";
+                } catch (const std::runtime_error& e) {
+                    std::cout << "[VM] LOAD: ERROR - " << e.what() << "\n";
+                    running = false;
+                    break;
+                }
                 break;
             }
                         
@@ -328,9 +376,9 @@ void NovaVM::executeLoop() {
                     running = false;
                     break;
                 }
-                
                 std::string name = string_constants[constVal.string_idx];
                 auto val = pop();
+                //std::cout << "[VM] DEFINE: " << name << " = " << novaStr(val)  << " (env=" << current_env.get() << ")\n";
                 current_env->define(name, val);
                 current_env->varTypes[name] = ::getNovaType(val);
                 break;
@@ -351,78 +399,223 @@ void NovaVM::executeLoop() {
                 break;
             }
             
-            case OpCode::JUMP_IF_NOT: {
+           case OpCode::JUMP_IF_NOT: {
                 size_t target = code[pc] | (code[pc+1] << 8) | (code[pc+2] << 16);
                 pc += 3;
                 auto val = pop();
-                if (!isTruthy(val)) pc = target;
+                
+                bool truthy = isTruthy(val);
+                //std::cout << "[VM] JUMP_IF_NOT: val=" << novaStr(val) << ", truthy=" << truthy << ", target=" << target << "\n";
+                
+                if (!truthy) {
+                    //std::cout << "[VM] JUMP_IF_NOT: JUMPING to " << target << "\n";
+                    pc = target;
+                } else {
+                    //std::cout << "[VM] JUMP_IF_NOT: NOT jumping, continuing at " << pc << "\n";
+                }
                 break;
             }
             
             case OpCode::CALL: {
-                size_t argc = code[pc++];
+                //std::cout << "[VM] CALL: ENTERING CALL\n";
                 size_t idx = code[pc++];
-                
                 BytecodeValue constVal = constants[idx];
                 if (constVal.type != BytecodeValue::STRING) {
-                    std::cout << "[VM] ERROR: CALL requires string constant\n";
+                    //std::cout << "[VM] ERROR: CALL requires string constant\n";
                     running = false;
                     break;
                 }
-                
                 std::string name = string_constants[constVal.string_idx];
-                callFunction(name, argc);
+                
+                //std::cout << "[VM] CALL: function name = '" << name << "'\n";
+                //std::cout << "[VM] CALL: function_params size = " << function_params.size() << "\n";
+                
+                // ── Get argument count ──────────────────────────────────────────────────
+                auto argc_val = pop();
+                size_t argc = static_cast<size_t>(std::get<double>(argc_val));
+                //std::cout << "[VM] CALL: argc = " << argc << "\n";
+                
+                // ── Collect arguments ──────────────────────────────────────────────────
+                std::vector<NovaValue> args;
+                for (size_t i = 0; i < argc; ++i) {
+                    args.push_back(pop());
+                }
+                std::reverse(args.begin(), args.end());
+                
+                // for (size_t i = 0; i < args.size(); ++i) {
+                //     //std::cout << "[VM] CALL: arg" << i << " = " << novaStr(args[i]) << "\n";
+                // }
+                
+                // ── Look up function address ──────────────────────────────────────────
+                auto it = function_addresses.find(name);
+                if (it == function_addresses.end()) {
+                    std::cout << "[VM] ERROR: Function not found: " << name << "\n";
+                    running = false;
+                    break;
+                }
+                size_t func_addr = it->second;
+                //std::cout << "[VM] CALL: func_addr = " << func_addr << "\n";
+                
+                // ── Get parameter names ──────────────────────────────────────────────
+                auto params_it = function_params.find(name);
+                if (params_it == function_params.end()) {
+                    std::cout << "[VM] ERROR: Function params not found: " << name << "\n";
+                    running = false;
+                    break;
+                }
+                const std::vector<std::string>& params = params_it->second;
+                
+                //std::cout << "[VM] CALL: params = ";
+                // for (const auto& p : params) std::cout << p << " ";
+                // std::cout << "\n";
+                
+                // ── Push frame ──────────────────────────────────────────────────────────
+                //std::cout << "[VM] CALL: Pushing frame, current pc = " << pc << "\n";
+              //  std::cout << "[VM] CALL: " << name << " | old_env=" << current_env.get() << ", pc=" << pc << "\n";
+
+                Frame frame;
+                frame.pc = pc;
+                frame.env = std::make_shared<Environment>(current_env);
+                frames.push_back(frame);
+                current_env = frame.env;
+                //std::cout << "[VM] CALL: Frame pushed\n";
+               // std::cout << "[VM] CALL: " << name << " | new_env=" << current_env.get() << ", func_addr=" << func_addr << "\n";
+                // ── Bind arguments to parameters ──────────────────────────────────────
+                //std::cout << "[VM] CALL: Binding " << params.size() << " params\n";
+                for (size_t i = 0; i < params.size(); ++i) {
+                    if (i < args.size()) {
+                        //std::cout << "[VM] CALL: binding " << params[i] << " = " << novaStr(args[i]) << "\n";
+                        current_env->define(params[i], args[i]);
+                    } else {
+                        //std::cout << "[VM] CALL: binding " << params[i] << " = 0 (default)\n";
+                        current_env->define(params[i], 0.0);
+                    }
+                }
+                
+                // ── Debug: print all variables in the new environment ──────────────────
+               // std::cout << "[VM] CALL: Environment variables after binding:\n";
+                // for (const auto& [var_name, var_value] : current_env->vars) {
+                //     std::cout << "  " << var_name << " = " << novaStr(var_value) << "\n";
+                // }
+                
+                //std::cout << "[VM] CALL: Jumping to " << func_addr << "\n";
+                pc = func_addr;
                 break;
             }
             
             case OpCode::RETURN: {
+                //std::cout << "[VM] RETURN\n";
+                
+                if (stack.empty()) {
+                    std::cout << "[VM] ERROR: RETURN: stack empty\n";
+                    running = false;
+                    break;
+                }
+                
                 auto val = pop();
-                popFrame();
+                //std::cout << "[VM] RETURN: returning " << novaStr(val) << "\n";
+                
+                if (frames.empty()) {
+                    std::cout << "[VM] ERROR: Return with no frame\n";
+                    running = false;
+                    break;
+                }
+                
+                // ── Restore frame ──────────────────────────────────────────────────────
+                Frame frame = frames.back();
+                frames.pop_back();
+                current_env = frame.env;  // ← This MUST restore the environment!
+                pc = frame.pc;            // ← This MUST restore the program counter!
+                
+                //std::cout << "[VM] RETURN: restored to env=" << current_env.get() << ", pc=" << pc << "\n";
+                
+                // ── Push return value ──────────────────────────────────────────────────
                 push(val);
                 break;
             }
             
             case OpCode::SLICE: {
-                auto step = pop();
-                auto end = pop();
-                auto start = pop();
+                auto step_val = pop();
+                auto end_val = pop();
+                auto start_val = pop();
                 auto obj = pop();
                 
-                // ── Handle Bunch ──────────────────────────────────────────────────────
+                size_t start = 0, end = 0, step = 1;
+                
+                // ── Get start ──────────────────────────────────────────────────────
+                if (std::holds_alternative<double>(start_val)) {
+                    start = static_cast<size_t>(std::get<double>(start_val));
+                } else {
+                    //std::cout << "[VM] SLICE: start type=" << start_val.index() << "\n";
+                    start = 0;
+                }
+                
+                // ── Get end (if -1, use size) ──────────────────────────────────────
+                if (std::holds_alternative<double>(end_val)) {
+                    end = static_cast<size_t>(std::get<double>(end_val));
+                } else {
+                    //std::cout << "[VM] SLICE: end type=" << end_val.index() << "\n";
+                    end = 0;
+                }
+                
+                // ── Get step ──────────────────────────────────────────────────────
+                if (std::holds_alternative<double>(step_val)) {
+                    step = static_cast<size_t>(std::get<double>(step_val));
+                } else {
+                   // std::cout << "[VM] SLICE: step type=" << step_val.index() << "\n";
+                    step = 1;
+                }
+                if (step == 0) step = 1;
+                
+                // ── Handle Bunch ──────────────────────────────────────────────────
                 if (std::holds_alternative<std::shared_ptr<NovaBunch>>(obj)) {
                     auto bunch = std::get<std::shared_ptr<NovaBunch>>(obj);
-                    size_t s = static_cast<size_t>(std::get<double>(start));
-                    size_t e = static_cast<size_t>(std::get<double>(end));
-                    size_t st = static_cast<size_t>(std::get<double>(step));
-                    if (s > bunch->size()) s = bunch->size();
-                    if (e > bunch->size()) e = bunch->size();
-                    if (st == 0) st = 1;
+                    size_t size = bunch->size();
+                    // If end == -1 sentinel, use size
+                    if (end == static_cast<size_t>(-1)) end = size;
+                    if (start > size) start = size;
+                    if (end > size) end = size;
                     auto result = std::make_shared<NovaBunch>();
-                    for (size_t i = s; i < e; i += st) {
+                    for (size_t i = start; i < end; i += step) {
                         result->push((*bunch)[i]);
                     }
                     push(result);
                     break;
                 }
                 
-                // ── Handle String ──────────────────────────────────────────────────────
+                // ── Handle String (shared_ptr<NovaString>) ──────────────────────
                 if (std::holds_alternative<std::shared_ptr<NovaString>>(obj)) {
                     auto str = std::get<std::shared_ptr<NovaString>>(obj);
-                    size_t s = static_cast<size_t>(std::get<double>(start));
-                    size_t e = static_cast<size_t>(std::get<double>(end));
-                    size_t st = static_cast<size_t>(std::get<double>(step));
-                    if (s > str->data.size()) s = str->data.size();
-                    if (e > str->data.size()) e = str->data.size();
-                    if (st == 0) st = 1;
+                    size_t size = str->data.size();
+                    if (end == static_cast<size_t>(-1)) end = size;
+                    if (start > size) start = size;
+                    if (end > size) end = size;
                     std::string result;
-                    for (size_t i = s; i < e; i += st) {
+                    for (size_t i = start; i < end; i += step) {
                         result += str->data[i];
                     }
                     push(result);
                     break;
                 }
                 
+                // ── Handle String (std::string) ──────────────────────────────────
+                if (std::holds_alternative<std::string>(obj)) {
+                    const std::string& str = std::get<std::string>(obj);
+                    size_t size = str.size();
+                    if (end == static_cast<size_t>(-1)) end = size;
+                    if (start > size) start = size;
+                    if (end > size) end = size;
+                    std::string result;
+                    for (size_t i = start; i < end; i += step) {
+                        result += str[i];
+                    }
+                    push(result);
+                    break;
+                }
+                
+                //std::cout << "[VM] SLICE: object type=" << obj.index() << "\n";
                 throw std::runtime_error("SLICE: Object is not a bunch or string");
+                break;
             }
 
             case OpCode::BUNCH_INIT: {
@@ -497,13 +690,10 @@ void NovaVM::executeLoop() {
             }
 
             case OpCode::STRING_SET: {
-                auto char_val = pop();   // The character to set
-                auto idx_val = pop();    // The index
-                auto obj = pop();        // The string object
+                auto char_val = pop();
+                auto idx_val = pop();
+                auto obj = pop();
                 
-                if (!std::holds_alternative<std::shared_ptr<NovaString>>(obj)) {
-                    throw std::runtime_error("STRING_SET: Object is not a string");
-                }
                 if (!std::holds_alternative<double>(idx_val)) {
                     throw std::runtime_error("STRING_SET: Index must be a number");
                 }
@@ -511,47 +701,91 @@ void NovaVM::executeLoop() {
                     throw std::runtime_error("STRING_SET: Value must be a string (single character)");
                 }
                 
-                auto str = std::get<std::shared_ptr<NovaString>>(obj);
                 size_t idx = static_cast<size_t>(std::get<double>(idx_val));
                 std::string charStr = std::get<std::string>(char_val);
                 
-                // ── BOUNDS CHECK ──────────────────────────────────────────────────
-                if (idx >= str->data.size()) {
-                    throw std::runtime_error("String index out of bounds: " + std::to_string(idx) + 
-                                            " (size: " + std::to_string(str->data.size()) + ")");
-                }
-                if (charStr.size() != 1) {
-                    throw std::runtime_error("STRING_SET: Must set a single character");
+                // ── Handle NovaString (shared_ptr) ──────────────────────────────────────
+                if (std::holds_alternative<std::shared_ptr<NovaString>>(obj)) {
+                    auto str = std::get<std::shared_ptr<NovaString>>(obj);
+                    if (idx >= str->data.size()) {
+                        throw std::runtime_error("String index out of bounds");
+                    }
+                    if (charStr.size() != 1) {
+                        throw std::runtime_error("STRING_SET: Must set a single character");
+                    }
+                    str->data[idx] = charStr[0];
+                    break;
                 }
                 
-                str->data[idx] = charStr[0];
+                // ── Handle std::string ──────────────────────────────────────────────────
+                if (std::holds_alternative<std::string>(obj)) {
+                    // std::string is immutable in our VM (we can modify it)
+                    // But we need to convert to NovaString first
+                    std::string& str = std::get<std::string>(obj);
+                    if (idx >= str.size()) {
+                        throw std::runtime_error("String index out of bounds");
+                    }
+                    if (charStr.size() != 1) {
+                        throw std::runtime_error("STRING_SET: Must set a single character");
+                    }
+                    str[idx] = charStr[0];
+                    break;
+                }
+                
+                throw std::runtime_error("STRING_SET: Object is not a string");
                 break;
             }
             case OpCode::STRING_GET: {
                 auto idx_val = pop();
                 auto obj = pop();
-                if (!std::holds_alternative<std::shared_ptr<NovaString>>(obj)) {
-                    throw std::runtime_error("STRING_GET: Object is not a string");
-                }
+                
                 if (!std::holds_alternative<double>(idx_val)) {
                     throw std::runtime_error("STRING_GET: Index must be a number");
                 }
-                auto str = std::get<std::shared_ptr<NovaString>>(obj);
                 size_t idx = static_cast<size_t>(std::get<double>(idx_val));
-                if (idx >= str->data.size()) {
-                    throw std::runtime_error("String index out of bounds");
+                
+                // ── Handle NovaString (shared_ptr) ──────────────────────────────────────
+                if (std::holds_alternative<std::shared_ptr<NovaString>>(obj)) {
+                    auto str = std::get<std::shared_ptr<NovaString>>(obj);
+                    if (idx >= str->data.size()) {
+                        throw std::runtime_error("String index out of bounds");
+                    }
+                    push(std::string(1, str->data[idx]));
+                    break;
                 }
-                push(std::string(1, str->data[idx]));
+                
+                // ── Handle std::string ──────────────────────────────────────────────────
+                if (std::holds_alternative<std::string>(obj)) {
+                    const std::string& str = std::get<std::string>(obj);
+                    if (idx >= str.size()) {
+                        throw std::runtime_error("String index out of bounds");
+                    }
+                    push(std::string(1, str[idx]));
+                    break;
+                }
+                
+                throw std::runtime_error("STRING_GET: Object is not a string");
                 break;
             }
 
             case OpCode::STRING_SIZE: {
                 auto obj = pop();
-                if (!std::holds_alternative<std::shared_ptr<NovaString>>(obj)) {
-                    throw std::runtime_error("STRING_SIZE: Object is not a string");
+                
+                // ── Handle NovaString (shared_ptr) ──────────────────────────────────────
+                if (std::holds_alternative<std::shared_ptr<NovaString>>(obj)) {
+                    auto str = std::get<std::shared_ptr<NovaString>>(obj);
+                    push((double)str->data.size());
+                    break;
                 }
-                auto str = std::get<std::shared_ptr<NovaString>>(obj);
-                push((double)str->data.size());
+                
+                // ── Handle std::string ──────────────────────────────────────────────────
+                if (std::holds_alternative<std::string>(obj)) {
+                    const std::string& str = std::get<std::string>(obj);
+                    push((double)str.size());
+                    break;
+                }
+                
+                throw std::runtime_error("STRING_SIZE: Object is not a string");
                 break;
             }
             case OpCode::MAP_INIT: {
@@ -811,18 +1045,57 @@ void NovaVM::executeLoop() {
                 break;
             }
             
-            case OpCode::THROW: {
-                auto val = pop();
-                std::cout << "Error: " << novaStr(val) << "\n";
-                running = false;
+            case OpCode::TRY_START: {
+                size_t catch_addr = code[pc] | (code[pc+1] << 8) | (code[pc+2] << 16);
+                pc += 3;
+                try_stack.push(catch_addr);
+                //std::cout << "[VM] TRY_START: catch at " << catch_addr << "\n";
                 break;
             }
-            
-            case OpCode::TRY_START:
-            case OpCode::TRY_END:
-            case OpCode::CATCH_START:
+
+            case OpCode::TRY_END: {
+                if (!try_stack.empty()) {
+                    try_stack.pop();
+                }
+                //std::cout << "[VM] TRY_END\n";
                 break;
-            
+            }
+
+            case OpCode::CATCH_START: {
+                // Just pop the try_stack, leave the error on the stack
+                if (!try_stack.empty()) {
+                    try_stack.pop();
+                }
+                //std::cout << "[VM] CATCH_START: stack_size=" << stack.size() << "\n";
+                break;
+            }
+
+            case OpCode::THROW: {
+                // The error value is already on the stack from throw()
+                // Just check if there's a catch block
+                //std::cout << "[VM] THROW: stack_size=" << stack.size() << "\n";
+                
+                if (stack.empty()) {
+                    std::cout << "[VM] THROW: ERROR - Stack empty!\n";
+                    running = false;
+                    break;
+                }
+                
+                if (!try_stack.empty()) {
+                    size_t catch_addr = try_stack.top();
+                    try_stack.pop();
+                    //std::cout << "[VM] THROW: Jumping to catch at " << catch_addr << "\n";
+                    // The error stays on the stack for CATCH_START to pop
+                    pc = catch_addr;
+                    break;
+                }
+                
+                // No catch handler - pop and print error
+                auto val = pop();
+                std::cout << "Uncaught error: " << novaStr(val) << "\n";
+                running = false;
+                break;
+}
             case OpCode::HALT:
                 running = false;
                 break;
@@ -898,7 +1171,7 @@ bool NovaVM::isTruthy(const NovaValue& val) {
 }
 
 std::string NovaVM::novaStr(const NovaValue& val) {
-    return std::visit([](auto&& v) -> std::string {
+        return std::visit([](auto&& v) -> std::string {
         using T = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<T, std::nullptr_t>) {
             return "null";

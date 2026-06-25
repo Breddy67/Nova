@@ -32,7 +32,8 @@ public:
     std::vector<BytecodeValue> constants;
     std::unordered_map<std::string, size_t> labels;
     std::vector<std::string> string_constants;
-    
+    std::unordered_map<std::string, size_t> function_addresses; 
+    std::unordered_map<std::string, std::vector<std::string>> function_params; 
     void emit(OpCode op) {
         code.push_back(static_cast<uint8_t>(op));
     }

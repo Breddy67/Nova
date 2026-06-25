@@ -225,7 +225,7 @@ NodePtr Parser::parseLoop() {
         // ── Check if it's an assignment (i = 0) ──────────────────────────────
         if (auto* assign = dynamic_cast<AssignNode*>(expr.get())) {
             // Convert to variable declaration: var i = 0
-            std::cout << "[PARSE] Converting assignment to var declaration: " << assign->name << "\n";
+            //std::cout << "[PARSE] Converting assignment to var declaration: " << assign->name << "\n";
             init.push_back(std::make_unique<VarDeclNode>(assign->name, std::move(assign->value)));
         } else {
             init.push_back(std::move(expr));
@@ -347,7 +347,7 @@ NodePtr Parser::parseReturn() {
 }
 
 NodePtr Parser::parseTryCatch() {
-    advance();
+    advance(); // consume 'try'
     auto tryBlock = parseBlock();
 
     std::string catchVar;
@@ -359,6 +359,7 @@ NodePtr Parser::parseTryCatch() {
         advance();
         expect(TokenType::LPAREN, "Expected '('");
         catchVar = expect(TokenType::IDENT, "Expected error variable").lexeme;
+        std::cout << "[PARSE] catchVar = '" << catchVar << "'\n";  // ← Add debug!
         expect(TokenType::RPAREN, "Expected ')'");
         catchBlock = parseBlock();
     }
@@ -525,6 +526,10 @@ NodePtr Parser::parseAddition() {
         std::string op = (current().type == TokenType::PLUS) ? "+" : "-";
         advance();
         auto right = parseMultiplication();
+        //std::cout << "[PARSE] parseAddition: " << op << " with right value\n";
+        if (auto* num = dynamic_cast<NumberNode*>(right.get())) {
+            //std::cout << "[PARSE] parseAddition: right is number: " << num->value << "\n";
+        }
         left = std::make_unique<BinOpNode>(std::move(left), op, std::move(right));
     }
     return left;
@@ -554,6 +559,7 @@ NodePtr Parser::parsePower() {
     if (current().type == TokenType::POWER) {
         advance();
         auto exp = parsePower();
+        //std::cout << "[PARSE] parseUnary: unary minus on operand\n";
         return std::make_unique<BinOpNode>(std::move(base), "**", std::move(exp));
     }
     return base;
@@ -611,6 +617,7 @@ NodePtr Parser::parsePrimary() {
 
     // ── Parse the base expression ──────────────────────────────────────────
     if (tok.type == TokenType::NUMBER) {
+        //std::cout << "[PARSE] Number: " << tok.numVal << "\n";
         advance();
         expr = std::make_unique<NumberNode>(tok.numVal);
     } else if (tok.type == TokenType::STRING) {

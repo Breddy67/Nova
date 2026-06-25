@@ -68,11 +68,36 @@ void BytecodeCompiler::visitNull(NullNode& node) {
 void BytecodeCompiler::visitBinOp(BinOpNode& node) {
     //std::cout << "[BINOP] visitBinOp: op=" << node.op << "\n";
     
-    compileExpression(*node.left);
-    compileExpression(*node.right);
+    // ── Check if the right side contains a function call ──────────────────
+    bool hasCall = false;
+    if (dynamic_cast<CallNode*>(node.right.get())) {
+        hasCall = true;
+    }
+    if (auto* binOp = dynamic_cast<BinOpNode*>(node.right.get())) {
+        if (dynamic_cast<CallNode*>(binOp->left.get()) ||
+            dynamic_cast<CallNode*>(binOp->right.get())) {
+            hasCall = true;
+        }
+    }
     
-    //std::cout << "[BINOP] Emitting opcode for: " << node.op << "\n";
+    // ── Only save left value for arithmetic operations ──────────────────
+    bool isArithmetic = (node.op == "+" || node.op == "-" || node.op == "*" || 
+                         node.op == "/" || node.op == "%" || node.op == "**");
     
+    if (hasCall && isArithmetic) {
+        //std::cout << "[BINOP] Saving left value for arithmetic\n";
+        compileExpression(*node.left);
+        std::string temp_name = "__temp_" + std::to_string(temp_counter++);
+        program.emit(OpCode::DEFINE, temp_name);
+        compileExpression(*node.right);
+        program.emit(OpCode::LOAD, temp_name);
+    } else {
+        // ── Normal case: compile left then right ──────────────────────────
+        compileExpression(*node.left);
+        compileExpression(*node.right);
+    }
+    
+    // ── Emit the operation ──────────────────────────────────────────────────
     if (node.op == "+") {
         program.emit(OpCode::ADD);
     } else if (node.op == "-") {
@@ -102,7 +127,6 @@ void BytecodeCompiler::visitBinOp(BinOpNode& node) {
     } else if (node.op == "or") {
         program.emit(OpCode::OR);
     } else {
-        //std::cout << "[BINOP] Unknown op: " << node.op << "\n";
         throw std::runtime_error("Unknown binary operator: " + node.op);
     }
 }
@@ -479,10 +503,20 @@ void BytecodeCompiler::visitCall(CallNode& node) {
         program.emit(OpCode::STRING_SET);
         return;
     }
+    if (functionAddresses.find(node.name) != functionAddresses.end()) {
+        //std::cout << "[CALL] Calling user function: " << node.name << "\n";
+        
+        for (auto& arg : node.args) {
+            compileExpression(*arg);
+        }
+        
+        program.emit(OpCode::PUSH, static_cast<double>(node.args.size()));
+        program.emit(OpCode::CALL, node.name);
+        return;
+    }
     
-    //====================================================================
-    // 10. Regular Function Call (Fallback)
-    // ===================================================================
+    // ── Fallback: try to load as variable and call ──────────────────────────
+    std::cout << "[CALL] Unknown function: " << node.name << ", treating as variable\n";
     program.emit(OpCode::LOAD, node.name);
     program.emit(OpCode::CALL);
 }
@@ -494,119 +528,90 @@ void BytecodeCompiler::visitIndexAccess(IndexAccessNode& node) {
 }
 
 void BytecodeCompiler::visitSubpart(SubpartNode& node) {
-    std::cout << "[SLICE] Compiling slice as loop\n";
+    //std::cout << "[SLICE] Using SLICE opcode\n";
     
-    // ── Generate unique temporary names ──────────────────────────────────
-    static int slice_counter = 0;
-    std::string result_name = "__slice_result_" + std::to_string(slice_counter);
-    std::string obj_name = "__slice_obj_" + std::to_string(slice_counter);
-    std::string len_name = "__slice_len_" + std::to_string(slice_counter);
-    std::string start_name = "__slice_start_" + std::to_string(slice_counter);
-    std::string end_name = "__slice_end_" + std::to_string(slice_counter);
-    std::string step_name = "__slice_step_" + std::to_string(slice_counter);
-    std::string i_name = "__slice_i_" + std::to_string(slice_counter);
-    slice_counter++;
-    
-    // ── Create result bunch: result = bunch() ──────────────────────────
-    program.emit(OpCode::BUNCH_INIT);
-    program.emit(OpCode::DEFINE, result_name);
-    
-    // ── Store object: obj = expression ──────────────────────────────────
+    // ── Compile object ──────────────────────────────────────────────────
     compileExpression(*node.object);
-    program.emit(OpCode::DEFINE, obj_name);
     
-    // ── Get length: len = bunch_size(obj) ──────────────────────────────
-    program.emit(OpCode::LOAD, obj_name);
-    program.emit(OpCode::BUNCH_SIZE);
-    program.emit(OpCode::DEFINE, len_name);
-    
-    // ── Get start (default 0) ──────────────────────────────────────────
+    // ── Compile start (default 0) ──────────────────────────────────────
     if (node.start) {
         compileExpression(*node.start);
     } else {
         program.emit(OpCode::PUSH, 0.0);
     }
-    program.emit(OpCode::DEFINE, start_name);
     
-    // ── Get end (default len) ──────────────────────────────────────────
+    // ── Compile end (default -1 sentinel, VM will use size) ──────────
     if (node.end) {
         compileExpression(*node.end);
     } else {
-        program.emit(OpCode::LOAD, len_name);
+        program.emit(OpCode::PUSH, -1.0);  // ← Sentinel: VM uses size
     }
-    program.emit(OpCode::DEFINE, end_name);
     
-    // ── Get step (default 1) ──────────────────────────────────────────
+    // ── Compile step (default 1) ──────────────────────────────────────
     if (node.step) {
         compileExpression(*node.step);
     } else {
         program.emit(OpCode::PUSH, 1.0);
     }
-    program.emit(OpCode::DEFINE, step_name);
     
-    // ── Initialize loop counter: i = start ─────────────────────────────
-    program.emit(OpCode::LOAD, start_name);
-    program.emit(OpCode::DEFINE, i_name);
-    
-    // ── Loop: while (i < end) ──────────────────────────────────────────
-    size_t loop_start = program.size();
-    
-    // ── Condition ──────────────────────────────────────────────────────
-    program.emit(OpCode::LOAD, i_name);
-    program.emit(OpCode::LOAD, end_name);
-    program.emit(OpCode::LT);
-    
-    size_t exit_jump = program.size();
-    program.emit(OpCode::JUMP_IF_NOT);
-    program.emitByte(0);
-    program.emitByte(0);
-    program.emitByte(0);
-    
-    // ── Body: result.push(obj[i]) ──────────────────────────────────────
-    // Stack must be: [result, value] for BUNCH_PUSH
-    program.emit(OpCode::LOAD, result_name);  // Stack: [result]
-    program.emit(OpCode::LOAD, obj_name);     // Stack: [result, obj]
-    program.emit(OpCode::LOAD, i_name);       // Stack: [result, obj, i]
-    program.emit(OpCode::BUNCH_GET);          // Stack: [result, value]  (popped obj, i)
-    program.emit(OpCode::BUNCH_PUSH);         // Stack: [result]  (popped result, value)
-    
-    // ── Increment: i = i + step ──────────────────────────────────────
-    program.emit(OpCode::LOAD, i_name);
-    program.emit(OpCode::LOAD, step_name);
-    program.emit(OpCode::ADD);
-    program.emit(OpCode::STORE, i_name);
-    
-    // ── Jump back ──────────────────────────────────────────────────────
-    program.emit(OpCode::JUMP);
-    program.emitByte((loop_start >> 0) & 0xFF);
-    program.emitByte((loop_start >> 8) & 0xFF);
-    program.emitByte((loop_start >> 16) & 0xFF);
-    
-    // ── Exit: patch jump ──────────────────────────────────────────────
-    size_t exit = program.size();
-    uint8_t* code = program.code.data();
-    code[exit_jump + 1] = (exit >> 0) & 0xFF;
-    code[exit_jump + 2] = (exit >> 8) & 0xFF;
-    code[exit_jump + 3] = (exit >> 16) & 0xFF;
-    
-    // ── Push result ──────────────────────────────────────────────────
-    program.emit(OpCode::LOAD, result_name);
+    // ── Emit SLICE ──────────────────────────────────────────────────────
+    program.emit(OpCode::SLICE);
 }
 
 void BytecodeCompiler::visitProgram(ProgramNode& node) {
-    // First pass: register functions
+    //std::cout << "[PROGRAM] Compiling program\n";
+    
+    // ── First pass: Register all function addresses ──────────────────────────
+    // Just register, don't compile yet
     for (auto& stmt : node.statements) {
         if (auto* func = dynamic_cast<FunDeclNode*>(stmt.get())) {
-            functionAddresses[func->name] = program.size();
-            // Don't compile yet, just register
+            // Reserve address (will be updated later)
+            functionAddresses[func->name] = 0;
+            functionParams[func->name] = func->params;
+            program.function_addresses[func->name] = 0;
+            program.function_params[func->name] = func->params;
+            //std::cout << "[PROGRAM] Registered function: " << func->name << " with " << func->params.size() << " params\n";
         }
     }
-    // Second pass: compile everything else
+    
+    // ── Second pass: Compile the MAIN PROGRAM FIRST! ──────────────────────────
+    //std::cout << "[PROGRAM] Compiling main program\n";
     for (auto& stmt : node.statements) {
         if (!dynamic_cast<FunDeclNode*>(stmt.get())) {
             compileStatement(*stmt);
         }
     }
+    
+    // ── Add HALT after main program ──────────────────────────────────────────
+    program.emit(OpCode::HALT);
+    
+    // ── Third pass: Compile ALL function bodies AFTER the main program ──────
+    for (auto& stmt : node.statements) {
+        if (auto* func = dynamic_cast<FunDeclNode*>(stmt.get())) {
+            // Update the address to the current position
+            functionAddresses[func->name] = program.size();
+            program.function_addresses[func->name] = program.size();
+            //std::cout << "[PROGRAM] Compiling function: " << func->name << " at address " << functionAddresses[func->name] << "\n";
+            
+            for (auto& body_stmt : func->body) {
+                compileStatement(*body_stmt);
+            }
+            
+            // Implicit return
+            bool hasReturn = false;
+            if (!func->body.empty()) {
+                if (auto* returnNode = dynamic_cast<ReturnNode*>(func->body.back().get())) {
+                    hasReturn = true;
+                }
+            }
+            if (!hasReturn) {
+                program.emit(OpCode::PUSH, 0.0);
+                program.emit(OpCode::RETURN);
+            }
+        }
+    }
+    
+    //std::cout << "[PROGRAM] Program compiled\n";
 }
 
 void BytecodeCompiler::visitVarDecl(VarDeclNode& node) {
@@ -649,10 +654,33 @@ void BytecodeCompiler::visitAssign(AssignNode& node) {
 }
 
 void BytecodeCompiler::visitFunDecl(FunDeclNode& node) {
-    // Store function name and entry point for later
+    //std::cout << "[FUNCTION] visitFunDecl: " << node.name << "\n";
+    
+    // ── Store function info ──────────────────────────────────────────────────
     functionAddresses[node.name] = program.size();
-    // Compile function body (will be called later)
-    // For now, just store the node
+    functionParams[node.name] = node.params;
+    program.function_addresses[node.name] = program.size();
+    program.function_params[node.name] = node.params;
+    
+    // ── Compile function body ────────────────────────────────────────────────
+    for (auto& stmt : node.body) {
+        compileStatement(*stmt);
+    }
+    
+    // ── Implicit return if no explicit return ──────────────────────────────
+    bool hasReturn = false;
+    if (!node.body.empty()) {
+        if (auto* returnNode = dynamic_cast<ReturnNode*>(node.body.back().get())) {
+            hasReturn = true;
+        }
+    }
+    if (!hasReturn) {
+        program.emit(OpCode::PUSH, 0.0);
+        program.emit(OpCode::RETURN);
+    }
+    
+    // std::cout << "[FUNCTION] " << node.name << " compiled at address " 
+    //           << functionAddresses[node.name] << " with " << node.params.size() << " params\n";
 }
 
 void BytecodeCompiler::visitPrint(PrintNode& node) {
@@ -700,23 +728,31 @@ void BytecodeCompiler::visitReturn(ReturnNode& node) {
     program.emit(OpCode::RETURN);
 }
 void BytecodeCompiler::visitIf(IfNode& node) {
+  //  std::cout << "[IF] visitIf\n";
+    
     compileExpression(*node.condition);
+  //  std::cout << "[IF] Condition compiled\n";
     
     size_t else_jump = program.code.size();
-    program.emitJump(OpCode::JUMP_IF_NOT, 0);  // ← Use program.emitJump()
+    program.emitJump(OpCode::JUMP_IF_NOT, 0);
+  //  std::cout << "[IF] JUMP_IF_NOT emitted at " << else_jump << "\n";
     
     compileBlock(node.body);
+    //std::cout << "[IF] Body compiled\n";
     
     size_t end_jump = program.code.size();
-    program.emitJump(OpCode::JUMP, 0);         // ← Use program.emitJump()
+    program.emitJump(OpCode::JUMP, 0);
+    //std::cout << "[IF] JUMP emitted at " << end_jump << "\n";
     
     size_t else_start = program.code.size();
     if (!node.elseBody.empty()) {
         compileBlock(node.elseBody);
+        //std::cout << "[IF] Else body compiled\n";
     }
     
     size_t end = program.code.size();
     
+    // Patch jumps
     program.code[else_jump + 1] = (else_start >> 0) & 0xFF;
     program.code[else_jump + 2] = (else_start >> 8) & 0xFF;
     program.code[else_jump + 3] = (else_start >> 16) & 0xFF;
@@ -724,6 +760,8 @@ void BytecodeCompiler::visitIf(IfNode& node) {
     program.code[end_jump + 1] = (end >> 0) & 0xFF;
     program.code[end_jump + 2] = (end >> 8) & 0xFF;
     program.code[end_jump + 3] = (end >> 16) & 0xFF;
+    
+    //std::cout << "[IF] Jumps patched: else_start=" << else_start << ", end=" << end << "\n";
 }
 
 
@@ -734,14 +772,15 @@ void BytecodeCompiler::visitLoop(LoopNode& node) {
     for (auto& stmt : node.init) {
         compileStatement(*stmt);
     }
+    //std::cout << "[LOOP] Init compiled\n";
     
     size_t loop_start = program.size();
     //std::cout << "[LOOP] loop_start = " << loop_start << "\n";
     
     if (node.condition) {
         compileExpression(*node.condition);
+        //std::cout << "[LOOP] Condition compiled\n";
         size_t exit_jump = program.size();
-        //std::cout << "[LOOP] exit_jump = " << exit_jump << "\n";
         program.emit(OpCode::JUMP_IF_NOT);
         program.emitByte(0);
         program.emitByte(0);
@@ -753,7 +792,9 @@ void BytecodeCompiler::visitLoop(LoopNode& node) {
         continue_stack.push(loop_start);
         
         // Compile body
+        //std::cout << "[LOOP] Compiling body with " << node.body.size() << " statements\n";
         compileBlock(node.body);
+        //std::cout << "[LOOP] Body compiled\n";
         
         // Update position
         size_t update_pos = program.size();
@@ -772,9 +813,11 @@ void BytecodeCompiler::visitLoop(LoopNode& node) {
         continue_stack.top() = update_pos;
         
         // Compile update
+        //std::cout << "[LOOP] Compiling update\n";
         for (auto& stmt : node.update) {
             compileStatement(*stmt);
         }
+        //std::cout << "[LOOP] Update compiled\n";
         
         // ── JUMP BACK TO LOOP START ──────────────────────────────────────────
         program.emit(OpCode::JUMP);
@@ -890,16 +933,51 @@ void BytecodeCompiler::visitContinue(ContinueNode& node) {
     program.emitByte(0);
 }
 void BytecodeCompiler::visitTryCatch(TryCatchNode& node) {
-    program.emit(OpCode::TRY_START);
-    compileBlock(node.tryBlock);
-    program.emit(OpCode::TRY_END);
+    std::cout << "[TRY] visitTryCatch\n";
     
-    if (!node.catchBlock.empty()) {
-        program.emit(OpCode::CATCH_START);
-        compileBlock(node.catchBlock);
-    }
+    // ── Emit TRY_START with catch address ──────────────────────────────
+    size_t try_start = program.size();
+    program.emit(OpCode::TRY_START);
+    program.emitByte(0);
+    program.emitByte(0);
+    program.emitByte(0);
+    
+    // ── Compile try block ──────────────────────────────────────────────────
+    compileBlock(node.tryBlock);
+    
+    // ── After try block, jump to end (skip catch) ──────────────────────────
+    size_t end_jump = program.size();
+    program.emit(OpCode::JUMP);
+    program.emitByte(0);
+    program.emitByte(0);
+    program.emitByte(0);
+    
+    // ── Catch block ──────────────────────────────────────────────────────────
+    size_t catch_start = program.size();
+    std::cout << "[TRY] catch_start = " << catch_start << "\n";
+    
+    // Patch TRY_START with catch address
+    uint8_t* code = program.code.data();
+    code[try_start + 1] = (catch_start >> 0) & 0xFF;
+    code[try_start + 2] = (catch_start >> 8) & 0xFF;
+    code[try_start + 3] = (catch_start >> 16) & 0xFF;
+    
+    // ── Emit CATCH_START ──────────────────────────────────────────────────
+    program.emit(OpCode::CATCH_START);
+    std::cout << "[TRY] Emitting DEFINE with name: '" << node.catchVar << "'\n";
+    program.emit(OpCode::DEFINE, node.catchVar);
+    
+    // ── Compile catch block ──────────────────────────────────────────────────
+    compileBlock(node.catchBlock);
+    
+    // ── Patch end jump ──────────────────────────────────────────────────────
+    size_t end = program.size();
+    code[end_jump + 1] = (end >> 0) & 0xFF;
+    code[end_jump + 2] = (end >> 8) & 0xFF;
+    code[end_jump + 3] = (end >> 16) & 0xFF;
+    
+    std::cout << "[TRY] end = " << end << "\n";
 }
-
 void BytecodeCompiler::visitThrow(ThrowNode& node) {
     compileExpression(*node.value);
     program.emit(OpCode::THROW);

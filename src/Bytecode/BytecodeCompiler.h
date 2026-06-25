@@ -43,7 +43,10 @@ private:
     std::vector<size_t> break_positions; 
     std::vector<size_t> continue_positions;
     std::unordered_map<std::string,size_t> functionAddresses;
+    std::unordered_map<std::string, std::vector<std::string>> functionParams;  
     std::vector<std::shared_ptr<FunDeclNode>> functions;
+    int temp_counter=0;
+    
     
     void compileExpression(Node& node);
     void compileStatement(Node& node);
