@@ -494,33 +494,103 @@ void BytecodeCompiler::visitIndexAccess(IndexAccessNode& node) {
 }
 
 void BytecodeCompiler::visitSubpart(SubpartNode& node) {
-    // Compile the object (bunch or string)
-    compileExpression(*node.object);
+    std::cout << "[SLICE] Compiling slice as loop\n";
     
-    // Compile start (default to 0 if null)
+    // ── Generate unique temporary names ──────────────────────────────────
+    static int slice_counter = 0;
+    std::string result_name = "__slice_result_" + std::to_string(slice_counter);
+    std::string obj_name = "__slice_obj_" + std::to_string(slice_counter);
+    std::string len_name = "__slice_len_" + std::to_string(slice_counter);
+    std::string start_name = "__slice_start_" + std::to_string(slice_counter);
+    std::string end_name = "__slice_end_" + std::to_string(slice_counter);
+    std::string step_name = "__slice_step_" + std::to_string(slice_counter);
+    std::string i_name = "__slice_i_" + std::to_string(slice_counter);
+    slice_counter++;
+    
+    // ── Create result bunch: result = bunch() ──────────────────────────
+    program.emit(OpCode::BUNCH_INIT);
+    program.emit(OpCode::DEFINE, result_name);
+    
+    // ── Store object: obj = expression ──────────────────────────────────
+    compileExpression(*node.object);
+    program.emit(OpCode::DEFINE, obj_name);
+    
+    // ── Get length: len = bunch_size(obj) ──────────────────────────────
+    program.emit(OpCode::LOAD, obj_name);
+    program.emit(OpCode::BUNCH_SIZE);
+    program.emit(OpCode::DEFINE, len_name);
+    
+    // ── Get start (default 0) ──────────────────────────────────────────
     if (node.start) {
         compileExpression(*node.start);
     } else {
         program.emit(OpCode::PUSH, 0.0);
     }
+    program.emit(OpCode::DEFINE, start_name);
     
-    // Compile end (default to size if null)
+    // ── Get end (default len) ──────────────────────────────────────────
     if (node.end) {
         compileExpression(*node.end);
     } else {
-        // For strings, we need to get the size
-        // This is a bit tricky - we'll need to handle this properly
-        program.emit(OpCode::PUSH, 999999.0);
+        program.emit(OpCode::LOAD, len_name);
     }
+    program.emit(OpCode::DEFINE, end_name);
     
-    // Compile step (default to 1 if null)
+    // ── Get step (default 1) ──────────────────────────────────────────
     if (node.step) {
         compileExpression(*node.step);
     } else {
         program.emit(OpCode::PUSH, 1.0);
     }
+    program.emit(OpCode::DEFINE, step_name);
     
-    program.emit(OpCode::SLICE);
+    // ── Initialize loop counter: i = start ─────────────────────────────
+    program.emit(OpCode::LOAD, start_name);
+    program.emit(OpCode::DEFINE, i_name);
+    
+    // ── Loop: while (i < end) ──────────────────────────────────────────
+    size_t loop_start = program.size();
+    
+    // ── Condition ──────────────────────────────────────────────────────
+    program.emit(OpCode::LOAD, i_name);
+    program.emit(OpCode::LOAD, end_name);
+    program.emit(OpCode::LT);
+    
+    size_t exit_jump = program.size();
+    program.emit(OpCode::JUMP_IF_NOT);
+    program.emitByte(0);
+    program.emitByte(0);
+    program.emitByte(0);
+    
+    // ── Body: result.push(obj[i]) ──────────────────────────────────────
+    // Stack must be: [result, value] for BUNCH_PUSH
+    program.emit(OpCode::LOAD, result_name);  // Stack: [result]
+    program.emit(OpCode::LOAD, obj_name);     // Stack: [result, obj]
+    program.emit(OpCode::LOAD, i_name);       // Stack: [result, obj, i]
+    program.emit(OpCode::BUNCH_GET);          // Stack: [result, value]  (popped obj, i)
+    program.emit(OpCode::BUNCH_PUSH);         // Stack: [result]  (popped result, value)
+    
+    // ── Increment: i = i + step ──────────────────────────────────────
+    program.emit(OpCode::LOAD, i_name);
+    program.emit(OpCode::LOAD, step_name);
+    program.emit(OpCode::ADD);
+    program.emit(OpCode::STORE, i_name);
+    
+    // ── Jump back ──────────────────────────────────────────────────────
+    program.emit(OpCode::JUMP);
+    program.emitByte((loop_start >> 0) & 0xFF);
+    program.emitByte((loop_start >> 8) & 0xFF);
+    program.emitByte((loop_start >> 16) & 0xFF);
+    
+    // ── Exit: patch jump ──────────────────────────────────────────────
+    size_t exit = program.size();
+    uint8_t* code = program.code.data();
+    code[exit_jump + 1] = (exit >> 0) & 0xFF;
+    code[exit_jump + 2] = (exit >> 8) & 0xFF;
+    code[exit_jump + 3] = (exit >> 16) & 0xFF;
+    
+    // ── Push result ──────────────────────────────────────────────────
+    program.emit(OpCode::LOAD, result_name);
 }
 
 void BytecodeCompiler::visitProgram(ProgramNode& node) {

@@ -46,10 +46,9 @@ public:
     
     void emit(OpCode op, const std::string& val) {
         code.push_back(static_cast<uint8_t>(op));
-        // Store the string in the string pool
         size_t idx = string_constants.size();
         string_constants.push_back(val);
-        constants.push_back(BytecodeValue(idx, true));  // true = is string
+        constants.push_back(BytecodeValue(idx, true));  
         code.push_back(static_cast<uint8_t>(constants.size() - 1));
     }
     

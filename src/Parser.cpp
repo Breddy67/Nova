@@ -217,30 +217,37 @@ NodePtr Parser::parseLoop() {
     advance(); // consume 'loop'
     expect(TokenType::LPAREN, "Expected '('");
 
-    // Parse initialization (i=0)
+    // ── Parse initialization (i=0) ──────────────────────────────────────────
     NodeList init;
     if (current().type != TokenType::SEMICOLON) {
-        init.push_back(parseExpression());
+        auto expr = parseExpression();
+        
+        // ── Check if it's an assignment (i = 0) ──────────────────────────────
+        if (auto* assign = dynamic_cast<AssignNode*>(expr.get())) {
+            // Convert to variable declaration: var i = 0
+            std::cout << "[PARSE] Converting assignment to var declaration: " << assign->name << "\n";
+            init.push_back(std::make_unique<VarDeclNode>(assign->name, std::move(assign->value)));
+        } else {
+            init.push_back(std::move(expr));
+        }
     }
     expect(TokenType::SEMICOLON, "Expected ';'");
 
-    // Parse condition (i<10)
+    // ── Parse condition (i<10) ──────────────────────────────────────────────
     NodePtr condition = nullptr;
     if (current().type != TokenType::SEMICOLON) {
         condition = parseExpression();
     }
     expect(TokenType::SEMICOLON, "Expected ';'");
 
-    // Parse update (i=i+1)
+    // ── Parse update (i=i+1) ──────────────────────────────────────────────────
     NodeList update;
     if (current().type != TokenType::RPAREN) {
         update.push_back(parseExpression());
     }
     expect(TokenType::RPAREN, "Expected ')'");
 
-    // ── SKIP NEWLINES BEFORE BODY ──────────────────────────────────────────
     skipNewlines();
-    
     auto body = parseBlock();
     return std::make_unique<LoopNode>(std::move(init), std::move(condition), std::move(update), std::move(body));
 }
@@ -623,18 +630,78 @@ NodePtr Parser::parsePrimary() {
         expr = parseExpression();
         expect(TokenType::RPAREN, "Expected ')'");
     } else if (tok.type == TokenType::LBRACE) {
-        // ── Initializer list: {1, 2, 3} ──────────────────────────────────
         expr = parseInitializerList("");
     } else {
         throw parseErr("Unexpected token '" + tok.lexeme + "' in expression", tok.line);
     }
 
-    // ── Handle postfix operators: indexing [ ] ────────────────────────────
+    // ── Handle postfix operators: [ ] indexing and [:] slicing ────────────
     while (current().type == TokenType::LBRACKET) {
         advance();  // consume '['
-        auto index = parseExpression();
-        expect(TokenType::RBRACKET, "Expected ']'");
-        expr = std::make_unique<IndexAccessNode>(std::move(expr), std::move(index));
+
+        // ── Check if it's a slice (has ':') ──────────────────────────────────
+        bool isSlice = false;
+        size_t save_pos = pos_;
+        
+        try {
+            if (current().type == TokenType::COLON) {
+                isSlice = true;
+            } else {
+                if (current().type != TokenType::RBRACKET) {
+                    parseExpression();
+                }
+                if (current().type == TokenType::COLON) {
+                    isSlice = true;
+                }
+            }
+            pos_ = save_pos;
+        } catch (...) {
+            pos_ = save_pos;
+        }
+
+        if (isSlice) {
+            // ── Parse slice: [start:end:step] ──────────────────────────────────
+            NodePtr start = nullptr;
+            NodePtr end = nullptr;
+            NodePtr step = nullptr;
+
+            if (current().type != TokenType::COLON) {
+                start = parseExpression();
+            }
+
+            expect(TokenType::COLON, "Expected ':'");
+
+            if (current().type != TokenType::COLON && current().type != TokenType::RBRACKET) {
+                end = parseExpression();
+            }
+
+            if (current().type == TokenType::COLON) {
+                advance();
+                if (current().type != TokenType::RBRACKET) {
+                    step = parseExpression();
+                } else {
+                    step = std::make_unique<NumberNode>(1.0);
+                }
+            } else {
+                step = std::make_unique<NumberNode>(1.0);
+            }
+
+            expect(TokenType::RBRACKET, "Expected ']'");
+
+            if (!start) start = std::make_unique<NumberNode>(0.0);
+
+            expr = std::make_unique<SubpartNode>(
+                std::move(expr),
+                std::move(start),
+                std::move(end),
+                std::move(step)
+            );
+        } else {
+            // ── Simple index access: [index] ──────────────────────────────────
+            auto index = parseExpression();
+            expect(TokenType::RBRACKET, "Expected ']'");
+            expr = std::make_unique<IndexAccessNode>(std::move(expr), std::move(index));
+        }
     }
 
     return expr;

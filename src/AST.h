@@ -380,12 +380,14 @@ struct ProgramNode : Node {
 struct VarDeclNode : Node {
     VISIT(VarDecl)
     std::string name;
-    std::string type;  
+    std::string type;
     NodePtr value;
+    
     // Constructor with type (for type declarations)
     VarDeclNode(std::string n, std::string t, NodePtr v)
         : name(std::move(n)), type(std::move(t)), value(std::move(v)) {}
-    // Constructor without type (for backward compatibility)
+    
+    // Constructor without type (for backward compatibility / dynamic vars)
     VarDeclNode(std::string n, NodePtr v)
         : name(std::move(n)), type(""), value(std::move(v)) {}
 };
