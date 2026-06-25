@@ -632,4 +632,8 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 🙏 Acknowledgments
 Inspired by Python's clean syntax
 
+<<<<<<< HEAD
 Built with C++17 for performance and systems programming
+=======
+Built with C++17 for performance and systems programming
+>>>>>>> 7160908ce7fab4827520005247ba7f42c632da04
