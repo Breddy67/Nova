@@ -9,7 +9,7 @@ enum class TokenType {
     NUMBER, STRING, BOOL, NULLVAL,
     // Identifiers & Keywords
     IDENT,
-    VAR, FUN, RETURN, IF, ELSE, LOOP, FROM, TO, PRINT,
+    VAR, FUN, RETURN, IF, ELSE, LOOP, WHILE, FROM, TO, PRINT,
     AND, OR, NOT,
     // Arithmetic
     PLUS, MINUS, STAR, SLASH, PERCENT, POWER,

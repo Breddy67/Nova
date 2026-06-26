@@ -19,7 +19,7 @@ std::string getNovaType(const NovaValue& val) {
         } else if constexpr (std::is_same_v<T, std::shared_ptr<NovaBunch>>) {
             return "bunch";
         } else if constexpr (std::is_same_v<T, std::shared_ptr<NovaMap>>) {
-            return "func";
+            return "map";
         } else if constexpr (std::is_same_v<T, std::shared_ptr<NovaStack>>) {
             return "stack";
         } else if constexpr (std::is_same_v<T, std::shared_ptr<NovaQueue>>) {

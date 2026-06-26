@@ -90,6 +90,7 @@ NodePtr Parser::parseStatement() {
     if (tt == TokenType::FUN) return parseFunDecl();
     if (tt == TokenType::IF) return parseIf();
     if (tt == TokenType::LOOP) return parseLoop();
+    if (tt == TokenType::WHILE) return parseWhile();
     if (tt == TokenType::RETURN) return parseReturn();
     if (tt == TokenType::TRY) return parseTryCatch();
     if (tt == TokenType::THROW) return parseThrow();
