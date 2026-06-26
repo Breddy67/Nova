@@ -7,7 +7,7 @@
 [![C++](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Breddy67/Nova)
-[![Lines](https://img.shields.io/badge/lines-2500%2B-blue.svg)](https://github.com/Breddy67/Nova)
+[![Lines](https://img.shields.io/badge/lines-4300%2B-blue.svg)](https://github.com/Breddy67/Nova)
 
 </div>
 
@@ -85,9 +85,6 @@ loop (i = 0; i < 10; i = i + 1) {
     print(i)
 }
 
-while (x < 5) {
-    x = x + 1
-}
 ```
 
 ### Functions(Including Rudimentary Recursion)
