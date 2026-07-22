@@ -3,7 +3,7 @@
 BytecodeCompiler::BytecodeCompiler() {}
 
 BytecodeProgram BytecodeCompiler::compile(ProgramNode& program) {
-    this->program.clear();  // ← Clear member variable
+    this->program.clear();  //  Clear member variable
     //std::cout << "[COMPILER] Program cleared\n";
     
     // Clear all stacks 

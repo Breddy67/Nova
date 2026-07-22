@@ -19,7 +19,6 @@ private:
     struct Frame {
         size_t pc;
         std::shared_ptr<Environment> env;
-        size_t return_pc;
     };
     static constexpr int MAX_INSTRUCTIONS = 100000;
     std::vector<uint8_t> code;

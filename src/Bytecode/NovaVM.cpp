@@ -1095,7 +1095,7 @@ void NovaVM::executeLoop() {
                 std::cout << "Uncaught error: " << novaStr(val) << "\n";
                 running = false;
                 break;
-}
+            }           
             case OpCode::HALT:
                 running = false;
                 break;
