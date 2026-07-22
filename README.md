@@ -1,13 +1,8 @@
-# 🚀 Nova Programming Language
+#  Nova Programming Language
 
 <div align="center">
 
 **A complete, Python-inspired programming language with bytecode VM, 6 data structures, and full control flow - built in C++**
-
-[![C++](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Breddy67/Nova)
-[![Lines](https://img.shields.io/badge/lines-4300%2B-blue.svg)](https://github.com/Breddy67/Nova)
 
 </div>
 
