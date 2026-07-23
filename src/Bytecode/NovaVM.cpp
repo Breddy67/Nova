@@ -178,7 +178,7 @@ void NovaVM::executeLoop() {
             case OpCode::MUL: {
                 auto right = pop();
                 auto left = pop();
-                std::cout << "[VM] MUL: " << std::get<double>(left) << " * " << std::get<double>(right) << " = "<<std::get<double>(left) * std::get<double>(right) <<std::endl;
+                //std::cout << "[VM] MUL: " << std::get<double>(left) << " * " << std::get<double>(right) << " = "<<std::get<double>(left) * std::get<double>(right) <<std::endl;
                 push(std::get<double>(left) * std::get<double>(right));
                 break;
             }
@@ -418,11 +418,11 @@ void NovaVM::executeLoop() {
             }
             
             case OpCode::CALL: {
-                    std::cout << "[VM] CALL: stack before = [";
-                    for (size_t i = 0; i < stack.size(); ++i) {
-                        std::cout << novaStr(stack[i]) << (i < stack.size() - 1 ? ", " : "");
-                    }
-                    std::cout << "]\n";
+                    // std::cout << "[VM] CALL: stack before = [";
+                    // for (size_t i = 0; i < stack.size(); ++i) {
+                    //     std::cout << novaStr(stack[i]) << (i < stack.size() - 1 ? ", " : "");
+                    // }
+                    // std::cout << "]\n";
                 //std::cout << "[VM] CALL: ENTERING CALL\n";
                 size_t idx = code[pc++];
                 BytecodeValue constVal = constants[idx];
@@ -478,8 +478,8 @@ void NovaVM::executeLoop() {
                 // ── Push frame ──────────────────────────────────────────────────────────
                 //std::cout << "[VM] CALL: Pushing frame, current pc = " << pc << "\n";
               //  std::cout << "[VM] CALL: " << name << " | old_env=" << current_env.get() << ", pc=" << pc << "\n";
-              std::cout << "[VM] CALL: before - frames=" << frames.size() 
-          << ", current_env=" << current_env.get() << "\n";
+        //       std::cout << "[VM] CALL: before - frames=" << frames.size() 
+        //   << ", current_env=" << current_env.get() << "\n";
 
                 Frame frame;
                 frame.pc = pc;
@@ -487,9 +487,9 @@ void NovaVM::executeLoop() {
                 frame.env = std::make_shared<Environment>(current_env);
                 frames.push_back(frame);
                 current_env = frame.env;
-                std::cout << "[VM] CALL: after - frames=" << frames.size() 
-          << ", current_env=" << current_env.get() 
-          << ", parent_env=" << (current_env->parent ? "yes" : "no") << "\n";
+        //         std::cout << "[VM] CALL: after - frames=" << frames.size() 
+        //   << ", current_env=" << current_env.get() 
+        //   << ", parent_env=" << (current_env->parent ? "yes" : "no") << "\n";
                 //std::cout << "[VM] CALL: Frame pushed\n";
                // std::cout << "[VM] CALL: " << name << " | new_env=" << current_env.get() << ", func_addr=" << func_addr << "\n";
                 // ── Bind arguments to parameters ──────────────────────────────────────
@@ -532,16 +532,16 @@ void NovaVM::executeLoop() {
                     running = false;
                     break;
                 }
-                std::cout << "[VM] RETURN: before - frames=" << frames.size() 
-          << ", current_env=" << current_env.get() << "\n";
+        //         std::cout << "[VM] RETURN: before - frames=" << frames.size() 
+        //   << ", current_env=" << current_env.get() << "\n";
                 // ── Restore frame ──────────────────────────────────────────────────────
                 Frame frame = frames.back();
                 frames.pop_back();
-                current_env = frame.caller_env;  //  This MUST restore the environment
-                pc = frame.pc;            //  This MUST restore the program counter
-                std::cout << "[VM] RETURN: after - frames=" << frames.size() 
-          << ", current_env=" << current_env.get() 
-          << ", pc=" << pc << "\n";
+                current_env = frame.caller_env;  //  Restore the environment
+                pc = frame.pc;            //  Restore the program counter
+        //         std::cout << "[VM] RETURN: after - frames=" << frames.size() 
+        //   << ", current_env=" << current_env.get() 
+        //   << ", pc=" << pc << "\n";
                 
                 //std::cout << "[VM] RETURN: restored to env=" << current_env.get() << ", pc=" << pc << "\n";
                 
